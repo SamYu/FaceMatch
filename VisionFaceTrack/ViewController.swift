@@ -24,6 +24,8 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
     var captureDevice: AVCaptureDevice?
     var captureDeviceResolution: CGSize = CGSize()
     
+    var deviceDiscoverySession: AVCaptureDevice.DiscoverySession?
+    
     // Layer UI for drawing Vision results
     var rootLayer: CALayer?
     var detectionOverlayLayer: CALayer?
@@ -36,6 +38,39 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
     
     lazy var sequenceRequestHandler = VNSequenceRequestHandler()
     
+    // Points for calculation
+    var noseTip: CGPoint!
+    var chinTip: CGPoint!
+    var leftPupil: CGPoint!
+    // Width of nose
+    var noseLeftCorner: CGPoint!
+    var noseRightCorner: CGPoint!
+    //Length of lips
+    var lipsTop: CGPoint!
+    var lipsBottom: CGPoint!
+    var lipsMiddle: CGPoint!
+    
+    //Distances
+    var noseWidth: CGFloat!
+    var lipHeight: CGFloat!
+    var noseToChin: CGFloat!
+    var lipsToChin: CGFloat!
+    var pupilToNose: CGFloat!
+    var noseToLips: CGFloat!
+    
+    //Ratio Variables
+    var noseChinToLipsChin: CGFloat!
+    var noseChinToPupilNose: CGFloat!
+    var noseWidthToNoseLips: CGFloat!
+    var lipsHeightToNoseWidth: CGFloat!
+    var faceRatio: CGFloat!
+    var beautyPercentage: CGFloat!
+    
+    //Ratio Labels
+    @IBOutlet weak var beautyPercentageLabel: UILabel!
+    @IBOutlet weak var insultLabel: UILabel!
+    
+    
     // MARK: UIViewController overrides
     
     override func viewDidLoad() {
@@ -46,6 +81,7 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
         self.prepareVisionRequest()
         
         self.session?.startRunning()
+        
     }
     
     override func didReceiveMemoryWarning() {
@@ -61,6 +97,7 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
     override var preferredInterfaceOrientationForPresentation: UIInterfaceOrientation {
         return .portrait
     }
+    
     
     // MARK: AVCapture Setup
     
@@ -110,9 +147,12 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
     }
     
     fileprivate func configureFrontCamera(for captureSession: AVCaptureSession) throws -> (device: AVCaptureDevice, resolution: CGSize) {
-        let deviceDiscoverySession = AVCaptureDevice.DiscoverySession(deviceTypes: [.builtInWideAngleCamera], mediaType: .video, position: .front)
         
-        if let device = deviceDiscoverySession.devices.first {
+        deviceDiscoverySession = AVCaptureDevice.DiscoverySession(deviceTypes: [.builtInWideAngleCamera], mediaType: .video, position: .front)
+        
+        
+        
+        if let device = deviceDiscoverySession?.devices.first {
             if let deviceInput = try? AVCaptureDeviceInput(device: device) {
                 if captureSession.canAddInput(deviceInput) {
                     captureSession.addInput(deviceInput)
@@ -264,6 +304,11 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
         self.setupVisionDrawingLayers()
     }
     
+    func roundTo3(num: Double) -> Double {
+        let roundNum = Double(round(1000*num)/1000)
+        return roundNum
+    }
+    
     // MARK: Drawing Vision Observations
     
     fileprivate func setupVisionDrawingLayers() {
@@ -403,7 +448,7 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
                 landmarks.rightEyebrow,
                 landmarks.faceContour,
                 landmarks.noseCrest,
-                landmarks.medianLine
+                landmarks.medianLine,
             ]
             for openLandmarkRegion in openLandmarkRegions where openLandmarkRegion != nil {
                 self.addPoints(in: openLandmarkRegion!, to: faceLandmarksPath, applying: affineTransform, closingWhenComplete: false)
@@ -417,6 +462,23 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
                 landmarks.innerLips,
                 landmarks.nose
             ]
+            
+            // Points for calculation
+            noseTip = landmarks.nose?.normalizedPoints[4]
+            chinTip = landmarks.faceContour?.normalizedPoints[5]
+            leftPupil = landmarks.leftPupil?.normalizedPoints[0]
+            // Width of nose
+            noseLeftCorner = landmarks.nose?.normalizedPoints[2]
+            noseRightCorner = landmarks.nose?.normalizedPoints[6]
+            //Length of lips
+            lipsTop = landmarks.outerLips?.normalizedPoints[2]
+            lipsBottom = landmarks.outerLips?.normalizedPoints[7]
+            lipsMiddle = CGPoint(x: ((lipsTop.x + lipsBottom.x) / 2), y: ((lipsTop.y + lipsBottom.y) / 2))
+            
+            
+            noseWidth = distance(p1: noseLeftCorner, p2: noseRightCorner)
+            lipHeight = distance(p1: lipsTop, p2: lipsBottom)
+
             for closedLandmarkRegion in closedLandmarkRegions where closedLandmarkRegion != nil {
                 self.addPoints(in: closedLandmarkRegion!, to: faceLandmarksPath, applying: affineTransform, closingWhenComplete: true)
             }
@@ -571,4 +633,66 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
             }
         }
     }
+    
+    func distance (p1: CGPoint, p2: CGPoint) -> CGFloat {
+        let xDist = (p2.x - p1.x)
+        let yDist = (p2.y - p1.y)
+        let finalDistance = sqrt((xDist * xDist) + (yDist * yDist))
+        
+        return abs(finalDistance)
+    }
+    
+    func ratio (distance1: CGFloat, distance2: CGFloat) -> CGFloat {
+        let biggerDistance = (max(distance1, distance2))
+        let smallerDistance = (min(distance1, distance2))
+        let finalRatio = biggerDistance / smallerDistance
+        
+        return finalRatio
+    }
+    
+    @IBAction func calculateRatio(_ sender: Any) {
+        
+        noseToChin = distance(p1: noseTip, p2: chinTip)
+        lipsToChin = distance(p1: lipsMiddle, p2: chinTip)
+        pupilToNose = distance(p1: leftPupil, p2: noseTip)
+        noseToLips = distance(p1: noseTip, p2: lipsMiddle)
+        
+        let goldenRatio: CGFloat = 1.61803398875
+        
+        
+        noseChinToLipsChin = ratio(distance1: noseToChin, distance2: lipsToChin)
+        noseChinToPupilNose = ratio(distance1: noseToChin, distance2: pupilToNose)
+        noseWidthToNoseLips = ratio(distance1: noseWidth, distance2: noseToLips)
+        lipsHeightToNoseWidth = ratio(distance1: lipHeight, distance2: noseWidth)
+        
+        faceRatio = (noseChinToLipsChin + noseChinToPupilNose + noseWidthToNoseLips + lipsHeightToNoseWidth) / 4
+        
+        let faceRatioMinusGolden = (abs((faceRatio * 2) - (goldenRatio * 2)))
+        
+        let beautyPercentageFloat = 100 - ((faceRatioMinusGolden / goldenRatio) * 100)
+        
+        beautyPercentage = round(beautyPercentageFloat * 10) / 10
+
+        
+        
+        beautyPercentageLabel.text = "You are \(beautyPercentage ?? 0) sweet! nice lol"
+        
+        if beautyPercentage <= 60 {
+            insultLabel.text = "please don't reproduce fam lol"
+        } else if beautyPercentage <= 70 {
+            insultLabel.text = "shortie better be thicc af cuz ur face is buck"
+        } else if beautyPercentage <= 80 {
+            insultLabel.text = "if mans get licked I'd pine ngl"
+        } else if beautyPercentage <= 90 {
+            insultLabel.text = "ayo ur bare sweet eh"
+        } else if beautyPercentage <= 95 {
+            insultLabel.text = "i'd battry you"
+        } else {
+            insultLabel.text = "please contact the developers of this app asap"
+        }
+
+    
+    }
+    
+    
 }
